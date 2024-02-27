@@ -53,6 +53,7 @@ function toggleMark(editor: Editor, format: keyof CustomText) {
     Editor.removeMark(editor, format);
   } else {
     Editor.addMark(editor, format, true);
+    Editor.addMark(editor, "author", "chetan");
   }
 }
 

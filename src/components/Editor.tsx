@@ -1,18 +1,23 @@
 "use client";
 
+import Prism from "prismjs";
+import "prismjs/components/prism-markdown";
 import LiveblocksProvider from "@liveblocks/yjs";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { createEditor, Editor, Transforms } from "slate";
+import { createEditor, Editor, Transforms, Text, Operation } from "slate";
 import { Editable, Slate, withReact } from "slate-react";
 import { withCursors, withYjs, YjsEditor } from "@slate-yjs/core";
 import * as Y from "yjs";
 import { LiveblocksProviderType, useRoom, useSelf } from "@/liveblocks.config";
 import { Loading } from "@/components/Loading";
 import styles from "./Editor.module.css";
-import { Toolbar } from "@/components/Toolbar";
 import { Leaf } from "@/components/Leaf";
 import { Cursors } from "@/components/Cursors";
 import { Avatars } from "./Avatars";
+import { Toolbar } from "./Toolbar";
+
+// todo:
+// - fix bullets. ensure tab to next or previous works
 
 // Collaborative text editor with simple rich text, live cursors, and live avatars
 export default function CollaborativeEditor() {
@@ -95,6 +100,85 @@ function SlateEditor({
     return () => YjsEditor.disconnect(editor);
   }, [editor]);
 
+  const { apply: applyOrig, addMark } = editor;
+
+  // editor.apply = (operation) => {
+  //   console.log("operation", operation);
+  //   if (Operation.isTextOperation(operation)) {
+  //     if (operation.type === "insert_text") {
+  //       const [node] = Editor.node(editor, operation.path);
+  //       const nodeText = "text" in node ? node.text : undefined;
+  //       if (typeof nodeText === "string" && nodeText.length === 0) {
+  //         return applyOrig({
+  //           type: "insert_text",
+  //           path: operation.path,
+  //           offset: 0,
+  //           text: operation.text.startsWith(generateAuthorAnnotation())
+  //             ? operation.text
+  //             : generateAuthorAnnotation() + operation.text,
+  //         });
+  //       }
+  //     }
+
+  //     if (operation.type === "remove_text") {
+  //       const [node] = Editor.node(editor, operation.path);
+  //       const nodeText = "text" in node ? node.text : undefined;
+  //       if (nodeText === generateAuthorAnnotation() + operation.text) {
+  //         return applyOrig({
+  //           type: "remove_text",
+  //           path: operation.path,
+  //           offset: 0,
+  //           text: generateAuthorAnnotation() + operation.text,
+  //         });
+  //       }
+  //     }
+  //   }
+  //   return applyOrig(operation);
+  // };
+
+  useEffect(() => {
+    editor.addMark("author", userInfo.name);
+    console.log("enabled authorship mark");
+  }, [JSON.stringify(editor.marks)]);
+  console.log("marks", editor.marks);
+  const decorate = useCallback(([node, path]) => {
+    const ranges = [];
+
+    if (!Text.isText(node)) {
+      return ranges;
+    }
+
+    const getLength = (token) => {
+      if (typeof token === "string") {
+        return token.length;
+      } else if (typeof token.content === "string") {
+        return token.content.length;
+      } else {
+        return token.content.reduce((l, t) => l + getLength(t), 0);
+      }
+    };
+
+    const tokens = Prism.tokenize(node.text, Prism.languages.markdown);
+    let start = 0;
+
+    for (const token of tokens) {
+      const length = getLength(token);
+      const end = start + length;
+
+      if (typeof token !== "string") {
+        ranges.push({
+          [token.type]: true,
+          anchor: { path, offset: start },
+          focus: { path, offset: end },
+        });
+      }
+
+      start = end;
+    }
+
+    return ranges;
+  }, []);
+
   return (
     <Slate editor={editor} initialValue={[emptyNode]}>
       <Cursors>
@@ -102,11 +186,7 @@ function SlateEditor({
           <Toolbar />
           <Avatars />
         </div>
-        <Editable
-          className={styles.editor}
-          placeholder="Start typing here…"
-          renderLeaf={renderLeaf}
-        />
+        <Editable decorate={decorate} renderLeaf={renderLeaf} />
       </Cursors>
     </Slate>
   );

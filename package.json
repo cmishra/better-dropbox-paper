@@ -10,6 +10,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@emotion/css": "^11.11.2",
     "@liveblocks/client": "^1.10.0",
     "@liveblocks/node": "^1.10.0",
     "@liveblocks/react": "^1.10.0",
@@ -20,6 +21,7 @@
     "@types/react": "^18.0.27",
     "@types/react-dom": "^18.0.10",
     "next": "^13.5.4",
+    "prismjs": "^1.29.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "slate": "^0.94.1",
@@ -28,6 +30,10 @@
     "yjs": "^13.6.4"
   },
   "devDependencies": {
-    "@iconify/react": "^4.1.0"
+    "@iconify/react": "^4.1.0",
+    "@types/prismjs": "^1.26.3",
+    "autoprefixer": "^10.4.17",
+    "postcss": "^8.4.35",
+    "tailwindcss": "^3.4.1"
   }
 }
