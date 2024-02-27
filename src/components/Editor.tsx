@@ -14,7 +14,6 @@ import styles from "./Editor.module.css";
 import { Leaf } from "@/components/Leaf";
 import { Cursors } from "@/components/Cursors";
 import { Avatars } from "./Avatars";
-import { Toolbar } from "./Toolbar";
 
 // todo:
 // - fix bullets. ensure tab to next or previous works
@@ -136,10 +135,6 @@ function SlateEditor({
   //   return applyOrig(operation);
   // };
 
-  useEffect(() => {
-    editor.addMark("author", userInfo.name);
-    console.log("enabled authorship mark");
-  }, [JSON.stringify(editor.marks)]);
   console.log("marks", editor.marks);
   const decorate = useCallback(([node, path]) => {
     const ranges = [];
@@ -183,10 +178,13 @@ function SlateEditor({
     <Slate editor={editor} initialValue={[emptyNode]}>
       <Cursors>
         <div className={styles.editorHeader}>
-          <Toolbar />
           <Avatars />
         </div>
-        <Editable decorate={decorate} renderLeaf={renderLeaf} />
+        <Editable
+          decorate={decorate}
+          renderLeaf={renderLeaf}
+          onKeyDown={() => Editor.addMark(editor, "author", userInfo?.name)}
+        />
       </Cursors>
     </Slate>
   );
