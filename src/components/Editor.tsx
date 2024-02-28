@@ -210,19 +210,23 @@ function SlateEditor({
       children: any;
       element: SlateElement;
     }) => {
-      // if (element.type === "list-item") {
-      return (
-        <Element attributes={attributes} element={element}>
-          {children}
-        </Element>
-      );
-      // }
+      const top_level_author = element.top_level_author;
+      if (!top_level_author) {
+        return (
+          <Element attributes={attributes} element={element}>
+            {children}
+          </Element>
+        );
+      }
+      // // }
 
-      const [authors, containsText] = findAuthorsOfTree(element);
       return (
         <div className="flex items-center" {...attributes}>
-          <div className="text-xs w-24 select-none" contentEditable={false}>
-            {containsText ? authors.join(", ") : ""}
+          <div
+            className="text-xs w-24 select-none italic"
+            contentEditable={false}
+          >
+            {top_level_author}
           </div>
           <div className="border-l-2 ml-2 pl-2">
             <Element element={element}>{children}</Element>
@@ -308,6 +312,14 @@ const withShortcuts = (editor: Editor) => {
             Transforms.removeNodes(editor, { at: childPath });
             return;
           }
+        }
+        if (node.top_level_author !== highestAuthor) {
+          Transforms.setNodes(
+            editor,
+            { top_level_author: highestAuthor },
+            { at: path }
+          );
+          return;
         }
       }
     }
