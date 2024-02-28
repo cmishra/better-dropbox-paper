@@ -3,7 +3,7 @@ import { CustomText } from "@/types";
 import { css } from "@emotion/css";
 
 export const Leaf = ({ attributes, children, leaf }: any) => {
-  console.log("leaf", leaf);
+  // console.log("leaf", JSON.stringify(leaf));
   return (
     <span
       {...attributes}
@@ -24,13 +24,13 @@ export const Leaf = ({ attributes, children, leaf }: any) => {
           font-size: 20px;
           line-height: 10px;
         `}
-        ${leaf.hr &&
+            ${leaf.hr &&
         css`
           display: block;
           text-align: center;
           border-bottom: 2px solid #ddd;
         `}
-        ${leaf.blockquote &&
+            ${leaf.blockquote &&
         css`
           display: inline-block;
           border-left: 2px solid #ddd;
@@ -38,7 +38,7 @@ export const Leaf = ({ attributes, children, leaf }: any) => {
           color: #aaa;
           font-style: italic;
         `}
-        ${leaf.code &&
+            ${leaf.code &&
         css`
           font-family: monospace;
           background-color: #eee;

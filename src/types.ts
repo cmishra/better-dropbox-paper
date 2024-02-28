@@ -12,6 +12,11 @@ export type CustomText = {
   italic?: boolean;
   underline?: boolean;
   author?: string;
+  title?: boolean;
+  list?: boolean;
+  hr?: boolean;
+  blockquote?: boolean;
+  code?: boolean;
 };
 
 declare module "slate" {

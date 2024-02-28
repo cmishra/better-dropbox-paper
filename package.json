@@ -25,6 +25,7 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "slate": "^0.94.1",
+    "slate-history": "^0.100.0",
     "slate-react": "^0.97.2",
     "typescript": "^5.2.2",
     "yjs": "^13.6.4"
