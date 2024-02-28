@@ -1,34 +1,38 @@
 "use client";
 
-import Prism, { Token } from "prismjs";
-import "prismjs/components/prism-markdown";
 import LiveblocksProvider from "@liveblocks/yjs";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createEditor,
   Editor,
   Transforms,
-  Text,
-  Element,
-  NodeEntry,
-  BaseRange,
-  Node,
+  Element as SlateElement,
+  Node as SlateNode,
+  Range,
+  Point,
 } from "slate";
-import { Editable, Slate, withReact } from "slate-react";
+import { Editable, ReactEditor, Slate, withReact } from "slate-react";
 import { withCursors, withYjs, YjsEditor } from "@slate-yjs/core";
 import * as Y from "yjs";
 import { LiveblocksProviderType, useRoom, useSelf } from "@/liveblocks.config";
 import { Loading } from "@/components/Loading";
 import styles from "./Editor.module.css";
-import { Leaf } from "@/components/Leaf";
 import { Cursors } from "@/components/Cursors";
 import { Avatars } from "./Avatars";
+import { withHistory } from "slate-history";
 
-// todo:
-// - fix bullets. ensure tab to next or previous works
-// - make h1 vs h3 different sizes
-// - make links work
-// - have headers that are edited by others render properly
+const SHORTCUTS = {
+  "*": "list-item",
+  "-": "list-item",
+  "+": "list-item",
+  ">": "block-quote",
+  "#": "heading-one",
+  "##": "heading-two",
+  "###": "heading-three",
+  "####": "heading-four",
+  "#####": "heading-five",
+  "######": "heading-six",
+};
 
 // Collaborative text editor with simple rich text, live cursors, and live avatars
 export default function CollaborativeEditor() {
@@ -77,13 +81,15 @@ function SlateEditor({
 
   // Set up editor with plugins, and place user info into Yjs awareness and cursors
   const editor = useMemo(() => {
-    const e = withReact(
-      withCursors(
-        withYjs(createEditor(), sharedType),
-        provider.awareness as any,
-        {
-          data: userInfo,
-        }
+    const e = withShortcuts(
+      withReact(
+        withCursors(
+          withYjs(withHistory(createEditor()), sharedType),
+          provider.awareness as any,
+          {
+            data: userInfo,
+          }
+        )
       )
     );
 
@@ -101,8 +107,118 @@ function SlateEditor({
     return e;
   }, [sharedType, provider.awareness, userInfo]);
 
-  // Set up Leaf components
-  const renderLeaf = useCallback((props: any) => <Leaf {...props} />, []);
+  const handleDOMBeforeInput = useCallback(
+    (e: InputEvent) => {
+      queueMicrotask(() => {
+        const pendingDiffs = ReactEditor.androidPendingDiffs(editor);
+
+        const scheduleFlush = pendingDiffs?.some(({ diff, path }) => {
+          if (!diff.text.endsWith(" ")) {
+            return false;
+          }
+
+          const { text } = SlateNode.leaf(editor, path);
+          const beforeText = text.slice(0, diff.start) + diff.text.slice(0, -1);
+          if (!(beforeText in SHORTCUTS)) {
+            return;
+          }
+
+          const blockEntry = Editor.above(editor, {
+            at: path,
+            match: (n) =>
+              SlateElement.isElement(n) && Editor.isBlock(editor, n),
+          });
+          if (!blockEntry) {
+            return false;
+          }
+
+          const [, blockPath] = blockEntry;
+          return Editor.isStart(editor, Editor.start(editor, path), blockPath);
+        });
+
+        if (scheduleFlush) {
+          ReactEditor.androidScheduleFlush(editor);
+        }
+      });
+    },
+    [editor]
+  );
+
+  const Element = ({
+    attributes,
+    children,
+    element,
+  }: {
+    attributes?: any;
+    children: any;
+    element: SlateElement;
+  }) => {
+    switch (element.type) {
+      case "bulleted-list":
+        return (
+          <ul className="text-xs list-disc ml-4" {...attributes}>
+            {children}
+          </ul>
+        );
+      case "heading-one":
+        return (
+          <h1 className="text-xl font-semibold" {...attributes}>
+            {children}
+          </h1>
+        );
+      case "heading-two":
+        return (
+          <h2 className="text-lg font-semibold" {...attributes}>
+            {children}
+          </h2>
+        );
+      case "heading-three":
+        return (
+          <h3 className="text-md font-semibold" {...attributes}>
+            {children}
+          </h3>
+        );
+      case "heading-four":
+        return (
+          <h4 className="text-normal font-semibold" {...attributes}>
+            {children}
+          </h4>
+        );
+      case "list-item":
+        return (
+          <li className="text-xs" {...attributes}>
+            {children}
+          </li>
+        );
+      default:
+        return (
+          <p className="text-xs" {...attributes}>
+            {children}
+          </p>
+        );
+    }
+  };
+
+  function findAuthorsOfTree(element: SlateElement) {
+    console.log("element", element);
+    console.log("contains child", "children" in element);
+    if ("author" in element || "text" in element) {
+      return [[element.author], element.text.length > 0];
+    }
+    if (SlateElement.isAncestor(element)) {
+      const { children } = element;
+      return children
+        .map(findAuthorsOfTree)
+        .reduce(
+          ([authors, seenText], [newAuthors, latestSeenText]) => [
+            [...authors, ...newAuthors],
+            seenText || latestSeenText,
+          ],
+          [[], 0]
+        );
+    }
+    throw new Error(`unexpected element ${JSON.stringify(element)}`);
+  }
 
   const renderElement = useCallback(
     ({
@@ -112,23 +228,24 @@ function SlateEditor({
     }: {
       attributes: any;
       children: any;
-      element: Element;
+      element: SlateElement;
     }) => {
-      console.log("element", JSON.stringify(element));
-      const directTextChildren = (element.children ?? []).filter(
-        (x): x is Text => typeof x === "object" && !!x && "text" in x
+      // if (element.type === "list-item") {
+      return (
+        <Element attributes={attributes} element={element}>
+          {children}
+        </Element>
       );
-      const authors = directTextChildren
-        .toSorted((a, b) => b.text.length - a.text.length)
-        .map((x) => (x.author ?? "").split(" ", 1));
-      const containsText = directTextChildren.some((x) => x.text.length > 0);
+      // }
+
+      const [authors, containsText] = findAuthorsOfTree(element);
       return (
         <div className="flex items-center" {...attributes}>
           <div className="text-xs w-24 select-none" contentEditable={false}>
             {containsText ? authors.join(", ") : ""}
           </div>
-          <div className="border-l-2 ml-2 pl-2" {...attributes}>
-            {children}
+          <div className="border-l-2 ml-2 pl-2">
+            <Element element={element}>{children}</Element>
           </div>
         </div>
       );
@@ -141,52 +258,6 @@ function SlateEditor({
     return () => YjsEditor.disconnect(editor);
   }, [editor]);
 
-  // some magic code that actually implements the markdown support
-  // from https://www.slatejs.org/examples/markdown-preview
-  const decorate = useCallback(([node, path]: NodeEntry) => {
-    const ranges: BaseRange[] = [];
-
-    if (!Text.isText(node)) {
-      return ranges;
-    }
-
-    const getLength = (token: any) => {
-      if (typeof token === "string") {
-        return token.length;
-      } else if (typeof token.content === "string") {
-        return token.content.length;
-      } else {
-        return token.content.reduce(
-          (l: number, t: number) => l + getLength(t),
-          0
-        );
-      }
-    };
-    // const matchingNodes = Node.parent(node, path);
-    // console.log("parent node is", matchingNodes);
-
-    const tokens = Prism.tokenize(node.text, Prism.languages.markdown);
-    // console.log("tokens", tokens);
-    let start = 0;
-
-    for (const token of tokens) {
-      const length = getLength(token);
-      const end = start + length;
-
-      if (typeof token !== "string") {
-        ranges.push({
-          [token.type]: true,
-          anchor: { path, offset: start },
-          focus: { path, offset: end },
-        });
-      }
-
-      start = end;
-    }
-
-    return ranges;
-  }, []);
-
   return (
     <Slate editor={editor} initialValue={[initialState]}>
       <Cursors>
@@ -194,9 +265,10 @@ function SlateEditor({
           <Avatars />
         </div>
         <Editable
+          onDOMBeforeInput={handleDOMBeforeInput}
+          autoFocus
+          spellCheck
           className="p-2 focus:outline-none"
-          decorate={decorate}
-          renderLeaf={renderLeaf}
           onKeyDown={() => Editor.addMark(editor, "author", userInfo?.name)}
           renderElement={renderElement}
         />
@@ -204,3 +276,98 @@ function SlateEditor({
     </Slate>
   );
 }
+
+const withShortcuts = (editor: Editor) => {
+  const { deleteBackward, insertText } = editor;
+
+  editor.insertText = (text) => {
+    const { selection } = editor;
+
+    if (text.endsWith(" ") && selection && Range.isCollapsed(selection)) {
+      const { anchor } = selection;
+      const block = Editor.above(editor, {
+        match: (n) => SlateElement.isElement(n) && Editor.isBlock(editor, n),
+      });
+      const path = block ? block[1] : [];
+      const start = Editor.start(editor, path);
+      const range = { anchor, focus: start };
+      const beforeText = Editor.string(editor, range) + text.slice(0, -1);
+      const type = SHORTCUTS?.[beforeText];
+
+      if (type) {
+        Transforms.select(editor, range);
+
+        if (!Range.isCollapsed(range)) {
+          Transforms.delete(editor);
+        }
+
+        const newProperties: Partial<SlateElement> = {
+          type,
+        };
+        Transforms.setNodes<SlateElement>(editor, newProperties, {
+          match: (n) => SlateElement.isElement(n) && Editor.isBlock(editor, n),
+        });
+
+        if (type === "list-item") {
+          const list: BulletedListElement = {
+            type: "bulleted-list",
+            children: [],
+          };
+          Transforms.wrapNodes(editor, list, {
+            match: (n) =>
+              !Editor.isEditor(n) &&
+              SlateElement.isElement(n) &&
+              n.type === "list-item",
+          });
+        }
+
+        return;
+      }
+    }
+
+    insertText(text);
+  };
+
+  editor.deleteBackward = (...args) => {
+    const { selection } = editor;
+
+    if (selection && Range.isCollapsed(selection)) {
+      const match = Editor.above(editor, {
+        match: (n) => SlateElement.isElement(n) && Editor.isBlock(editor, n),
+      });
+
+      if (match) {
+        const [block, path] = match;
+        const start = Editor.start(editor, path);
+
+        if (
+          !Editor.isEditor(block) &&
+          SlateElement.isElement(block) &&
+          block.type !== "paragraph" &&
+          Point.equals(selection.anchor, start)
+        ) {
+          const newProperties: Partial<SlateElement> = {
+            type: "paragraph",
+          };
+          Transforms.setNodes(editor, newProperties);
+
+          if (block.type === "list-item") {
+            Transforms.unwrapNodes(editor, {
+              match: (n) =>
+                !Editor.isEditor(n) &&
+                SlateElement.isElement(n) &&
+                n.type === "bulleted-list",
+              split: true,
+            });
+          }
+
+          return;
+        }
+      }
+
+      deleteBackward(...args);
+    }
+  };
+
+  return editor;
+};
