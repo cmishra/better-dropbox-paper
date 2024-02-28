@@ -10,6 +10,7 @@ import {
   Node as SlateNode,
   Range,
   Point,
+  Node,
 } from "slate";
 import { Editable, ReactEditor, Slate, withReact } from "slate-react";
 import { withCursors, withYjs, YjsEditor } from "@slate-yjs/core";
@@ -199,27 +200,6 @@ function SlateEditor({
     }
   };
 
-  function findAuthorsOfTree(element: SlateElement) {
-    console.log("element", element);
-    console.log("contains child", "children" in element);
-    if ("author" in element || "text" in element) {
-      return [[element.author], element.text.length > 0];
-    }
-    if (SlateElement.isAncestor(element)) {
-      const { children } = element;
-      return children
-        .map(findAuthorsOfTree)
-        .reduce(
-          ([authors, seenText], [newAuthors, latestSeenText]) => [
-            [...authors, ...newAuthors],
-            seenText || latestSeenText,
-          ],
-          [[], 0]
-        );
-    }
-    throw new Error(`unexpected element ${JSON.stringify(element)}`);
-  }
-
   const renderElement = useCallback(
     ({
       attributes,
@@ -277,8 +257,62 @@ function SlateEditor({
   );
 }
 
+function findAuthorsOfTree(element: SlateElement) {
+  if ("author" in element || "text" in element) {
+    return [[element.author], element.text.length > 0];
+  }
+  if (SlateElement.isAncestor(element)) {
+    const { children } = element;
+    return children
+      .map(findAuthorsOfTree)
+      .reduce(
+        ([authors, seenText], [newAuthors, latestSeenText]) => [
+          [...authors, ...newAuthors],
+          seenText || latestSeenText,
+        ],
+        [[], 0]
+      );
+  }
+  throw new Error(`unexpected element ${JSON.stringify(element)}`);
+}
+
+function findHighestAuthor(element: SlateElement) {
+  if ("author" in element || "text" in element) {
+    return [element.author as string, element.text.length as number];
+  }
+  if (SlateElement.isAncestor(element)) {
+    const { children } = element;
+    const authorsAndCounts = {};
+    children.forEach((child) => {
+      const [author, count] = findHighestAuthor(child);
+      authorsAndCounts[author] = (authorsAndCounts[author] || 0) + count;
+    });
+    const [[author, count]] = Object.entries(authorsAndCounts).sort(
+      ([, count1], [, count2]) => count2 - count1
+    );
+    return [author, count];
+  }
+  throw new Error(`unexpected element ${JSON.stringify(element)}`);
+}
+
 const withShortcuts = (editor: Editor) => {
-  const { deleteBackward, insertText } = editor;
+  const { deleteBackward, insertText, normalizeNode } = editor;
+
+  editor.normalizeNode = ([node, path]) => {
+    // ensures only original authors can edit a line
+    if (path.length === 1) {
+      const [highestAuthor, textLen] = findHighestAuthor(node);
+      if (SlateElement.isElement(node) && textLen > 0) {
+        for (const [child, childPath] of SlateNode.children(editor, path)) {
+          if (child.author !== highestAuthor) {
+            Transforms.removeNodes(editor, { at: childPath });
+            return;
+          }
+        }
+      }
+    }
+    return normalizeNode([node, path]);
+  };
 
   editor.insertText = (text) => {
     const { selection } = editor;
