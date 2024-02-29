@@ -11,6 +11,7 @@ import {
   Range,
   Point,
   Node,
+  BaseOperation,
 } from "slate";
 import { Editable, ReactEditor, Slate, withReact } from "slate-react";
 import { withCursors, withYjs, YjsEditor } from "@slate-yjs/core";
@@ -210,12 +211,19 @@ function SlateEditor({
       children: any;
       element: SlateElement;
     }) => {
-      const top_level_author = element.top_level_author;
+      const { top_level_author, highlight } = element;
+      console.log("element", element);
+      if (highlight) {
+        console.log("highlighting exists");
+      }
+      const highlightClasses = !!highlight ? "bg-yellow-200" : "";
       if (!top_level_author) {
         return (
-          <Element attributes={attributes} element={element}>
-            {children}
-          </Element>
+          <div className={`${highlightClasses} p-1`}>
+            <Element attributes={attributes} element={element}>
+              {children}
+            </Element>
+          </div>
         );
       }
       // // }
@@ -228,7 +236,7 @@ function SlateEditor({
           >
             {top_level_author}
           </div>
-          <div className="border-l-2 ml-2 pl-2">
+          <div className={`p-1 border-l-2 ml-2 pl-2 ${highlightClasses}`}>
             <Element element={element}>{children}</Element>
           </div>
         </div>
@@ -243,7 +251,7 @@ function SlateEditor({
   }, [editor]);
 
   return (
-    <Slate editor={editor} initialValue={[initialState]} onChange={console.log}>
+    <Slate editor={editor} initialValue={[initialState]}>
       <Cursors>
         <div className={styles.editorHeader}>
           <Avatars />
@@ -253,8 +261,22 @@ function SlateEditor({
           autoFocus
           spellCheck
           className="p-2 focus:outline-none"
-          onKeyDown={() => Editor.addMark(editor, "author", userInfo?.name)}
+          onKeyDown={() => {
+            Editor.addMark(editor, "author", userInfo?.name);
+          }}
           renderElement={renderElement}
+          renderLeaf={({ attributes, children, leaf }) => {
+            const highlightClasses = leaf.highlight ? "bg-yellow-100" : "";
+            return (
+              <span
+                className={highlightClasses}
+                {...attributes}
+                style={{ fontWeight: leaf.bold ? "bold" : "normal" }}
+              >
+                {children}
+              </span>
+            );
+          }}
         />
       </Cursors>
     </Slate>
@@ -263,7 +285,10 @@ function SlateEditor({
 
 function findHighestAuthor(element: SlateElement) {
   if ("author" in element || "text" in element) {
-    return [element.author as string, element.text.length as number];
+    return {
+      author: element.author as string,
+      count: element.text.length as number,
+    };
   }
   if (SlateElement.isAncestor(element) && element.children.length > 0) {
     const { children } = element;
@@ -283,7 +308,8 @@ function findHighestAuthor(element: SlateElement) {
 }
 
 const withShortcuts = (editor: Editor) => {
-  const { deleteBackward, insertText, normalizeNode, insertBreak } = editor;
+  const { deleteBackward, insertText, normalizeNode, insertBreak, apply } =
+    editor;
 
   editor.normalizeNode = ([node, path]) => {
     if (path.length === 1) {
@@ -297,33 +323,29 @@ const withShortcuts = (editor: Editor) => {
             return;
           }
         }
-
         // bubbles up the 'author' attribute to the top level
         // so it's not printed multiple times in renderElement
-        if (node.top_level_author !== highestAuthor) {
-          Transforms.setNodes(
-            editor,
-            { top_level_author: highestAuthor },
-            { at: path }
-          );
-          return;
-        }
+      }
+      if (node.top_level_author !== highestAuthor) {
+        // const parent = Editor.above(editor, { mode: "highest" });
+        console.log("top_level_author to", path, node);
+        Transforms.setNodes(
+          editor,
+          { top_level_author: textLen > 0 ? highestAuthor : " " },
+          { at: path }
+        );
+        return;
       }
     }
     return normalizeNode([node, path]);
   };
 
   editor.insertBreak = () => {
-    const topLevelRow = editor.selection?.focus.path[0];
     Transforms.insertNodes(
       editor,
       { type: "paragraph", children: [{ text: "" }] },
-      { at: [topLevelRow + 1] }
+      { at: editor.selection }
     );
-    Transforms.select(editor, {
-      anchor: { path: [topLevelRow + 1, 0], offset: 0 },
-      focus: { path: [topLevelRow + 1, 0], offset: 0 },
-    });
   };
 
   editor.insertText = (text) => {
@@ -372,6 +394,16 @@ const withShortcuts = (editor: Editor) => {
     }
 
     insertText(text);
+  };
+
+  editor.apply = (e: BaseOperation) => {
+    if (e.type === "set_selection") {
+      console.log("e", e);
+      const { properties, newProperties } = e;
+      Transforms.setNodes(editor, { highlight: true }, { at: newProperties });
+      Transforms.setNodes(editor, { highlight: false }, { at: properties });
+    }
+    apply(e);
   };
 
   editor.deleteBackward = (...args) => {
